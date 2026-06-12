@@ -6,14 +6,22 @@ import {
   Cloud,
   Cpu,
   Edit3,
+  Eye,
+  EyeOff,
   GitPullRequest,
+  LayoutDashboard,
   ListChecks,
+  Menu as MenuIcon,
+  MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
   PauseCircle,
   Play,
   Plus,
   RefreshCw,
   Save,
   Settings2,
+  SlidersHorizontal,
   Terminal,
   Trash2,
   Wifi,
@@ -47,6 +55,8 @@ import {
   Station,
   StationCategory,
   TaskSession,
+  UiPanelId,
+  UiVisibility,
   Vector,
 } from "./types";
 import { defaultSettings, loadPersistedState, savePersistedState } from "./lib/storage";
@@ -82,6 +92,29 @@ const providerModelOptions: Record<Exclude<AIProvider, "ollama">, string[]> = {
   openai: ["ChatGPT Pro", "GPT-4 class model", "OpenAI custom model"],
   anthropic: ["Claude", "Claude Sonnet", "Claude Opus"],
   manual: ["Demo character"],
+};
+const panelOrder: UiPanelId[] = ["task", "team", "answer", "workflow", "diagnostics", "memory", "settings"];
+const panelLabels: Record<UiPanelId, string> = {
+  task: "Task",
+  team: "Team",
+  answer: "Final Answer",
+  workflow: "Pipeline",
+  diagnostics: "Diagnostics",
+  memory: "Memory",
+  settings: "Settings",
+};
+const defaultUiVisibility: UiVisibility = {
+  showSidebar: true,
+  showConversation: true,
+  panels: {
+    task: true,
+    team: true,
+    answer: true,
+    workflow: true,
+    diagnostics: true,
+    memory: true,
+    settings: true,
+  },
 };
 const needLabels: Record<NeedKey, string> = {
   focus: "Focus",
@@ -119,6 +152,17 @@ function providerDiagnosticSource(provider: AIProvider): DiagnosticSource {
   if (provider === "anthropic") return "anthropic";
   if (provider === "ollama") return "ollama";
   return "system";
+}
+
+function normalizeUiVisibility(value?: Partial<UiVisibility>): UiVisibility {
+  return {
+    showSidebar: value?.showSidebar ?? defaultUiVisibility.showSidebar,
+    showConversation: value?.showConversation ?? defaultUiVisibility.showConversation,
+    panels: {
+      ...defaultUiVisibility.panels,
+      ...(value?.panels ?? {}),
+    },
+  };
 }
 
 function clampNeed(value: number): number {
@@ -419,6 +463,8 @@ function App() {
   const [workflows, setWorkflows] = useState<ProjectWorkflow[]>(() => stored?.workflows ?? []);
   const [diagnosticLogs, setDiagnosticLogs] = useState<DiagnosticLogEntry[]>(() => stored?.diagnosticLogs ?? []);
   const [smokeTests, setSmokeTests] = useState<SmokeTestResult[]>(() => stored?.smokeTests ?? []);
+  const [uiVisibility, setUiVisibility] = useState<UiVisibility>(() => normalizeUiVisibility(stored?.ui));
+  const [menuOpen, setMenuOpen] = useState(false);
   const [taskText, setTaskText] = useState("Help me design a Wallpaper Engine AI office app.");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [finalAnswer, setFinalAnswer] = useState("");
@@ -445,6 +491,7 @@ function App() {
   const simulationPausedRef = useRef(simulationPaused);
   const ambientTickRef = useRef(0);
   const simTickRef = useRef(0);
+  const visiblePanelCount = panelOrder.filter((panelId) => uiVisibility.panels[panelId]).length;
 
   const addDiagnostic = (
     level: DiagnosticLevel,
@@ -507,9 +554,21 @@ function App() {
       workflows: workflows.slice(0, 8),
       diagnosticLogs: diagnosticLogs.slice(0, 200),
       smokeTests: smokeTests.slice(0, 24),
+      ui: uiVisibility,
     };
     savePersistedState(state);
-  }, [characters, settings, memories, sessions, workflows, diagnosticLogs, smokeTests]);
+  }, [characters, settings, memories, sessions, workflows, diagnosticLogs, smokeTests, uiVisibility]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMenuOpen((value) => !value);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -846,7 +905,7 @@ function App() {
       "success",
       "system",
       exists ? `Updated agent ${saved.name}.` : `Added agent ${saved.name}.`,
-      `${providerLabels[provider]} · ${saved.model}`,
+      `${providerLabels[provider]} - ${saved.model}`,
     );
     setEditingCharacter(null);
   };
@@ -879,9 +938,32 @@ function App() {
         "info",
         "system",
         `${character.enabled ? "Disabled" : "Enabled"} agent ${character.name}.`,
-        `${providerLabels[getCharacterProvider(character)]} · ${character.model}`,
+        `${providerLabels[getCharacterProvider(character)]} - ${character.model}`,
       );
     }
+  };
+
+  const togglePanelVisibility = (panelId: UiPanelId) => {
+    setUiVisibility((previous) => ({
+      ...previous,
+      panels: {
+        ...previous.panels,
+        [panelId]: !previous.panels[panelId],
+      },
+    }));
+  };
+
+  const setAllPanelsVisible = () => {
+    setUiVisibility((previous) => ({
+      ...previous,
+      showSidebar: true,
+      showConversation: true,
+      panels: { ...defaultUiVisibility.panels },
+    }));
+  };
+
+  const updateUiVisibility = (updater: (previous: UiVisibility) => UiVisibility) => {
+    setUiVisibility((previous) => normalizeUiVisibility(updater(previous)));
   };
 
   const handleTestOllama = async () => {
@@ -1170,6 +1252,10 @@ function App() {
           <h1>Agent Aquarium</h1>
         </div>
         <div className="topbar-actions">
+          <button className="menu-button" type="button" onClick={() => setMenuOpen(true)}>
+            <MenuIcon size={16} />
+            Menu
+          </button>
           <span className={`connection-pill connection-pill--${ollamaStatus.state}`}>
             {ollamaStatus.state === "connected" ? <Wifi size={16} /> : <WifiOff size={16} />}
             {settings.demoMode ? "Demo mode" : ollamaStatus.message}
@@ -1178,22 +1264,44 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
+      <main className={`workspace${uiVisibility.showSidebar ? "" : " workspace--focus"}`}>
         <section className="simulation-column">
           <div className="stage-header">
             <div>
               <h2>Tiny Office</h2>
               <p>{currentTask || "Agents idle, wander, and wait for a task."}</p>
             </div>
-            <div className="queue-chip">
-              <Bot size={16} />
-              {activeCharacterId
-                ? `${characters.find((character) => character.id === activeCharacterId)?.name ?? "Agent"} thinking`
-                : currentSpeakerId
-                  ? `${characters.find((character) => character.id === currentSpeakerId)?.name ?? "Agent"} speaking`
-                  : runningRef.current
-                    ? "Queue active"
-                : "Queue idle"}
+            <div className="stage-actions">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => updateUiVisibility((previous) => ({ ...previous, showSidebar: !previous.showSidebar }))}
+                aria-label={uiVisibility.showSidebar ? "Hide controls" : "Show controls"}
+                title={uiVisibility.showSidebar ? "Hide controls" : "Show controls"}
+              >
+                {uiVisibility.showSidebar ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() =>
+                  updateUiVisibility((previous) => ({ ...previous, showConversation: !previous.showConversation }))
+                }
+                aria-label={uiVisibility.showConversation ? "Hide conversation" : "Show conversation"}
+                title={uiVisibility.showConversation ? "Hide conversation" : "Show conversation"}
+              >
+                <MessageSquare size={16} />
+              </button>
+              <div className="queue-chip">
+                <Bot size={16} />
+                {activeCharacterId
+                  ? `${characters.find((character) => character.id === activeCharacterId)?.name ?? "Agent"} thinking`
+                  : currentSpeakerId
+                    ? `${characters.find((character) => character.id === currentSpeakerId)?.name ?? "Agent"} speaking`
+                    : runningRef.current
+                      ? "Queue active"
+                  : "Queue idle"}
+              </div>
             </div>
           </div>
           <div className="activity-strip">
@@ -1213,47 +1321,87 @@ function App() {
             selectedCharacterIds={selectedIds}
             meetingActive={sessionStatus === "gathering" || sessionStatus === "running"}
           />
-          <ConversationLog messages={messages} />
+          {uiVisibility.showConversation && <ConversationLog messages={messages} />}
         </section>
 
-        <aside className="control-column">
-          <TaskPanel
-            taskText={taskText}
-            setTaskText={setTaskText}
-            status={sessionStatus}
-            onStart={handleStartTask}
-            onStop={handleStopTask}
-            selectedCharacters={selectedCharacters}
-            progress={meetingProgress}
-          />
+        {uiVisibility.showSidebar && (
+          <aside className="control-column">
+            <ViewDock
+              visiblePanelCount={visiblePanelCount}
+              onOpenMenu={() => setMenuOpen(true)}
+              onShowAll={setAllPanelsVisible}
+            />
 
-          <TeamPanel
-            characters={characters}
-            ollamaStatus={ollamaStatus}
-            onAdd={(provider) => setEditingCharacter(createNewCharacter(settings, provider, ollamaStatus.models))}
-            onDetectOllama={handleTestOllama}
-            onEdit={setEditingCharacter}
-            onDelete={handleDeleteCharacter}
-            onToggle={handleToggleCharacter}
-          />
+            {uiVisibility.panels.task && (
+              <TaskPanel
+                taskText={taskText}
+                setTaskText={setTaskText}
+                status={sessionStatus}
+                onStart={handleStartTask}
+                onStop={handleStopTask}
+                selectedCharacters={selectedCharacters}
+                progress={meetingProgress}
+              />
+            )}
 
-          <FinalAnswerPanel finalAnswer={finalAnswer} />
-          <WorkflowPanel workflows={workflows} characters={characters} />
-          <DiagnosticsPanel
-            logs={diagnosticLogs}
-            smokeTests={smokeTests}
-            onRunSmokeTests={handleRunSmokeTests}
-            onClear={handleClearDiagnostics}
-          />
-          <MemoryPanel memories={memories} />
-          <SettingsPanel
-            settings={settings}
-            setSettings={setSettings}
-            ollamaStatus={ollamaStatus}
-            onTestOllama={handleTestOllama}
-          />
-        </aside>
+            {uiVisibility.panels.team && (
+              <TeamPanel
+                characters={characters}
+                ollamaStatus={ollamaStatus}
+                onAdd={(provider) => setEditingCharacter(createNewCharacter(settings, provider, ollamaStatus.models))}
+                onDetectOllama={handleTestOllama}
+                onEdit={setEditingCharacter}
+                onDelete={handleDeleteCharacter}
+                onToggle={handleToggleCharacter}
+              />
+            )}
+
+            {uiVisibility.panels.answer && <FinalAnswerPanel finalAnswer={finalAnswer} />}
+            {uiVisibility.panels.workflow && <WorkflowPanel workflows={workflows} characters={characters} />}
+            {uiVisibility.panels.diagnostics && (
+              <DiagnosticsPanel
+                logs={diagnosticLogs}
+                smokeTests={smokeTests}
+                onRunSmokeTests={handleRunSmokeTests}
+                onClear={handleClearDiagnostics}
+              />
+            )}
+            {uiVisibility.panels.memory && <MemoryPanel memories={memories} />}
+            {uiVisibility.panels.settings && (
+              <SettingsPanel
+                settings={settings}
+                setSettings={setSettings}
+                ollamaStatus={ollamaStatus}
+                onTestOllama={handleTestOllama}
+              />
+            )}
+          </aside>
+        )}
       </main>
+
+      {menuOpen && (
+        <OfficeMenu
+          uiVisibility={uiVisibility}
+          visiblePanelCount={visiblePanelCount}
+          sessionStatus={sessionStatus}
+          activeAgentCount={characters.filter((character) => character.enabled).length}
+          ollamaStatus={ollamaStatus}
+          settings={settings}
+          setSettings={setSettings}
+          onClose={() => setMenuOpen(false)}
+          onToggleSidebar={() =>
+            updateUiVisibility((previous) => ({ ...previous, showSidebar: !previous.showSidebar }))
+          }
+          onToggleConversation={() =>
+            updateUiVisibility((previous) => ({ ...previous, showConversation: !previous.showConversation }))
+          }
+          onTogglePanel={togglePanelVisibility}
+          onShowAll={setAllPanelsVisible}
+          onTestOllama={handleTestOllama}
+          onRunSmokeTests={handleRunSmokeTests}
+          onClearDiagnostics={handleClearDiagnostics}
+        />
+      )}
 
       {editingCharacter && (
         <CharacterEditor
@@ -1268,6 +1416,169 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+interface ViewDockProps {
+  visiblePanelCount: number;
+  onOpenMenu: () => void;
+  onShowAll: () => void;
+}
+
+function ViewDock({ visiblePanelCount, onOpenMenu, onShowAll }: ViewDockProps) {
+  return (
+    <section className="view-dock">
+      <div>
+        <strong>{visiblePanelCount} panels</strong>
+        <span>Controls visible</span>
+      </div>
+      <div className="view-dock-actions">
+        <button className="icon-button" type="button" onClick={onOpenMenu} aria-label="Open menu" title="Open menu">
+          <MenuIcon size={16} />
+        </button>
+        <button className="icon-button" type="button" onClick={onShowAll} aria-label="Show all panels" title="Show all panels">
+          <Eye size={16} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+interface OfficeMenuProps {
+  uiVisibility: UiVisibility;
+  visiblePanelCount: number;
+  sessionStatus: TaskSession["status"];
+  activeAgentCount: number;
+  ollamaStatus: OllamaStatus;
+  settings: AppSettings;
+  setSettings: (settings: AppSettings) => void;
+  onClose: () => void;
+  onToggleSidebar: () => void;
+  onToggleConversation: () => void;
+  onTogglePanel: (panelId: UiPanelId) => void;
+  onShowAll: () => void;
+  onTestOllama: () => void;
+  onRunSmokeTests: () => void;
+  onClearDiagnostics: () => void;
+}
+
+function OfficeMenu({
+  uiVisibility,
+  visiblePanelCount,
+  sessionStatus,
+  activeAgentCount,
+  ollamaStatus,
+  settings,
+  setSettings,
+  onClose,
+  onToggleSidebar,
+  onToggleConversation,
+  onTogglePanel,
+  onShowAll,
+  onTestOllama,
+  onRunSmokeTests,
+  onClearDiagnostics,
+}: OfficeMenuProps) {
+  const hiddenPanelCount = panelOrder.length - visiblePanelCount;
+
+  return (
+    <div className="menu-backdrop">
+      <section className="office-menu" role="dialog" aria-modal="true" aria-label="Office menu">
+        <div className="office-menu__header">
+          <div>
+            <p className="eyebrow">Office Menu</p>
+            <h2>View, Settings, Diagnostics</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close menu" title="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="menu-status-grid">
+          <span>
+            <strong>{sessionStatus}</strong>
+            Session
+          </span>
+          <span>
+            <strong>{activeAgentCount}</strong>
+            Agents
+          </span>
+          <span>
+            <strong>{visiblePanelCount}</strong>
+            Panels
+          </span>
+          <span>
+            <strong>{hiddenPanelCount}</strong>
+            Hidden
+          </span>
+        </div>
+
+        <div className="office-menu__body">
+          <section className="menu-section">
+            <div className="menu-section-title">
+              <LayoutDashboard size={17} />
+              <h3>View</h3>
+            </div>
+            <div className="view-toggle-grid">
+              <ViewToggleButton label="Controls" active={uiVisibility.showSidebar} onClick={onToggleSidebar} />
+              <ViewToggleButton label="Conversation" active={uiVisibility.showConversation} onClick={onToggleConversation} />
+              {panelOrder.map((panelId) => (
+                <ViewToggleButton
+                  label={panelLabels[panelId]}
+                  active={uiVisibility.panels[panelId]}
+                  onClick={() => onTogglePanel(panelId)}
+                  key={panelId}
+                />
+              ))}
+            </div>
+            <button className="secondary-button" type="button" onClick={onShowAll}>
+              <Eye size={16} />
+              Show All
+            </button>
+          </section>
+
+          <section className="menu-section">
+            <div className="menu-section-title">
+              <SlidersHorizontal size={17} />
+              <h3>Settings</h3>
+            </div>
+            <SettingsControls
+              settings={settings}
+              setSettings={setSettings}
+              ollamaStatus={ollamaStatus}
+              onTestOllama={onTestOllama}
+            />
+          </section>
+
+          <section className="menu-section">
+            <div className="menu-section-title">
+              <Terminal size={17} />
+              <h3>Diagnostics</h3>
+            </div>
+            <p className={`connection-note connection-note--${ollamaStatus.state}`}>{ollamaStatus.message}</p>
+            <div className="menu-action-row">
+              <button className="primary-button" type="button" onClick={onRunSmokeTests}>
+                <ListChecks size={16} />
+                Smoke Test
+              </button>
+              <button className="ghost-button" type="button" onClick={onClearDiagnostics}>
+                <Trash2 size={16} />
+                Clear Logs
+              </button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ViewToggleButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`view-toggle${active ? " view-toggle--active" : ""}`} type="button" onClick={onClick}>
+      {active ? <Eye size={15} /> : <EyeOff size={15} />}
+      <span>{label}</span>
+    </button>
   );
 }
 
@@ -1397,7 +1708,7 @@ function TeamPanel({ characters, ollamaStatus, onAdd, onDetectOllama, onEdit, on
             <div className="team-main">
               <strong>{character.name}</strong>
               <small>{character.role}</small>
-              <small>{providerLabels[getCharacterProvider(character)]} · {character.model}</small>
+              <small>{providerLabels[getCharacterProvider(character)]} - {character.model}</small>
               <NeedStack needs={character.needs} />
             </div>
             <div className="team-state">
@@ -1626,17 +1937,25 @@ interface SettingsPanelProps {
   onTestOllama: () => void;
 }
 
-function SettingsPanel({ settings, setSettings, ollamaStatus, onTestOllama }: SettingsPanelProps) {
-  const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    setSettings({ ...settings, [key]: value });
-  };
-
+function SettingsPanel(props: SettingsPanelProps) {
   return (
     <section className="panel settings-panel">
       <div className="panel-title">
         <h2>Settings</h2>
         <Settings2 size={17} />
       </div>
+      <SettingsControls {...props} />
+    </section>
+  );
+}
+
+function SettingsControls({ settings, setSettings, ollamaStatus, onTestOllama }: SettingsPanelProps) {
+  const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    setSettings({ ...settings, [key]: value });
+  };
+
+  return (
+    <div className="settings-controls">
       <label className="switch-row">
         <span>Demo mode</span>
         <input type="checkbox" checked={settings.demoMode} onChange={(event) => update("demoMode", event.target.checked)} />
@@ -1698,7 +2017,7 @@ function SettingsPanel({ settings, setSettings, ollamaStatus, onTestOllama }: Se
       </button>
       <p className={`connection-note connection-note--${ollamaStatus.state}`}>{ollamaStatus.message}</p>
       {ollamaStatus.models.length > 0 && <p className="model-note">Models: {ollamaStatus.models.slice(0, 5).join(", ")}</p>}
-    </section>
+    </div>
   );
 }
 

@@ -71,6 +71,14 @@ export type ManagerRole = "teamLead" | "hr" | "reviewer";
 
 export type AIProvider = "ollama" | "openai" | "anthropic" | "manual";
 
+export type UiPanelId = "task" | "team" | "answer" | "workflow" | "diagnostics" | "memory" | "settings";
+
+export interface UiVisibility {
+  showSidebar: boolean;
+  showConversation: boolean;
+  panels: Record<UiPanelId, boolean>;
+}
+
 export type StationKind =
   | "computer"
   | "workbench"
@@ -239,6 +247,7 @@ export interface PersistedState {
   workflows?: ProjectWorkflow[];
   diagnosticLogs?: DiagnosticLogEntry[];
   smokeTests?: SmokeTestResult[];
+  ui?: UiVisibility;
 }
 
 export interface OllamaStatus {
