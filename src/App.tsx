@@ -3,12 +3,15 @@ import {
   Bot,
   Bug,
   CheckCircle2,
+  Cloud,
+  Cpu,
   Edit3,
   GitPullRequest,
   ListChecks,
   PauseCircle,
   Play,
   Plus,
+  RefreshCw,
   Save,
   Settings2,
   Terminal,
@@ -23,6 +26,7 @@ import { getRandomStationForRole, getStationsForRole, stationById, stations } fr
 import { starterCharacters } from "./data/starterCharacters";
 import {
   AppSettings,
+  AIProvider,
   Character,
   CharacterNeeds,
   CharacterState,
@@ -68,12 +72,54 @@ import { runSmokeTests } from "./lib/diagnostics";
 
 const meetingOrder: RoomId[] = ["meeting", "meeting", "whiteboard", "art", "library", "desks"];
 const needKeys: NeedKey[] = ["focus", "recreation", "social", "energy"];
+const providerLabels: Record<AIProvider, string> = {
+  ollama: "Local Ollama",
+  openai: "ChatGPT / OpenAI",
+  anthropic: "Claude / Anthropic",
+  manual: "Demo/manual",
+};
+const providerModelOptions: Record<Exclude<AIProvider, "ollama">, string[]> = {
+  openai: ["ChatGPT Pro", "GPT-4 class model", "OpenAI custom model"],
+  anthropic: ["Claude", "Claude Sonnet", "Claude Opus"],
+  manual: ["Demo character"],
+};
 const needLabels: Record<NeedKey, string> = {
   focus: "Focus",
   recreation: "Rec",
   social: "Social",
   energy: "Energy",
 };
+
+function inferProviderFromModel(model?: string): AIProvider {
+  const clean = (model ?? "").toLowerCase();
+  if (clean.includes("claude") || clean.includes("anthropic")) return "anthropic";
+  if (clean.includes("gpt") || clean.includes("chatgpt") || clean.includes("openai")) return "openai";
+  if (clean.includes("demo") || clean.includes("manual")) return "manual";
+  return "ollama";
+}
+
+function getCharacterProvider(character: Pick<Character, "model" | "provider">): AIProvider {
+  return character.provider ?? inferProviderFromModel(character.model);
+}
+
+function getDefaultModelForProvider(
+  provider: AIProvider,
+  settings: AppSettings,
+  ollamaModels: string[] = [],
+): string {
+  if (provider === "ollama") {
+    return ollamaModels[0] ?? settings.defaultModel;
+  }
+
+  return providerModelOptions[provider][0];
+}
+
+function providerDiagnosticSource(provider: AIProvider): DiagnosticSource {
+  if (provider === "openai") return "openai";
+  if (provider === "anthropic") return "anthropic";
+  if (provider === "ollama") return "ollama";
+  return "system";
+}
 
 function clampNeed(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -122,9 +168,12 @@ function createDefaultNeeds(character: Pick<Character, "role" | "name">): Charac
 function normalizeCharacter(character: Character): Character {
   const fallbackNeeds = createDefaultNeeds(character);
   const currentStationId = character.currentStationId ?? character.stationId;
+  const provider = getCharacterProvider(character);
 
   return {
     ...character,
+    provider,
+    model: character.model?.trim() || getDefaultModelForProvider(provider, defaultSettings),
     needs: {
       focus: clampNeed(character.needs?.focus ?? fallbackNeeds.focus),
       recreation: clampNeed(character.needs?.recreation ?? fallbackNeeds.recreation),
@@ -285,14 +334,26 @@ function applyNeedTick(character: Character, hrSupportActive: boolean): Characte
   };
 }
 
-function createNewCharacter(settings: AppSettings): Character {
+function createNewCharacter(settings: AppSettings, provider: AIProvider = "ollama", ollamaModels: string[] = []): Character {
   const position = getRandomRoomSpot("desks");
+  const name =
+    provider === "openai"
+      ? "New ChatGPT Agent"
+      : provider === "anthropic"
+        ? "New Claude Agent"
+        : "New Ollama Agent";
+  const role = provider === "openai" || provider === "anthropic" ? "Specialist" : "Researcher";
+
   return normalizeCharacter({
     id: shortId("character"),
-    name: "New Agent",
-    role: "Researcher",
-    model: settings.defaultModel,
-    bio: "Curious, local-first, and careful with assumptions.",
+    name,
+    role,
+    model: getDefaultModelForProvider(provider, settings, ollamaModels),
+    provider,
+    bio:
+      provider === "ollama"
+        ? "Curious, local-first, and careful with assumptions."
+        : "Remote-provider character profile for planning and demo-mode collaboration.",
     skills: ["research", "planning"],
     speakingStyle: "concise, thoughtful",
     preferredRoom: "library",
@@ -303,7 +364,7 @@ function createNewCharacter(settings: AppSettings): Character {
     currentRoom: "desks",
     position,
     targetPosition: position,
-    needs: createDefaultNeeds({ name: "New Agent", role: "Researcher" }),
+    needs: createDefaultNeeds({ name, role }),
     scheduleMode: "auto",
   });
 }
@@ -772,13 +833,21 @@ function App() {
   };
 
   const handleSaveCharacter = (character: Character) => {
+    const saved = normalizeCharacter(character);
+    const provider = getCharacterProvider(saved);
+    const exists = characters.some((item) => item.id === saved.id);
     setCharacters((previous) => {
-      const exists = previous.some((item) => item.id === character.id);
       if (exists) {
-        return previous.map((item) => (item.id === character.id ? character : item));
+        return previous.map((item) => (item.id === saved.id ? saved : item));
       }
-      return [...previous, character];
+      return [...previous, saved];
     });
+    addDiagnostic(
+      "success",
+      "system",
+      exists ? `Updated agent ${saved.name}.` : `Added agent ${saved.name}.`,
+      `${providerLabels[provider]} · ${saved.model}`,
+    );
     setEditingCharacter(null);
   };
 
@@ -789,6 +858,7 @@ function App() {
     setCharacters((previous) => previous.filter((item) => item.id !== id));
     setSelectedIds((previous) => previous.filter((item) => item !== id));
     if (editingCharacter?.id === id) setEditingCharacter(null);
+    addDiagnostic("warn", "system", `Removed agent ${character.name}.`, character.role);
   };
 
   const handleToggleCharacter = (id: string) => {
@@ -803,6 +873,15 @@ function App() {
           : character,
       ),
     );
+    const character = characters.find((item) => item.id === id);
+    if (character) {
+      addDiagnostic(
+        "info",
+        "system",
+        `${character.enabled ? "Disabled" : "Enabled"} agent ${character.name}.`,
+        `${providerLabels[getCharacterProvider(character)]} · ${character.model}`,
+      );
+    }
   };
 
   const handleTestOllama = async () => {
@@ -815,7 +894,7 @@ function App() {
       models: result.models,
     });
     addDiagnostic(
-      result.ok ? "success" : "error",
+      result.ok ? result.models.length ? "success" : "warn" : "error",
       "ollama",
       result.message,
       result.models.length ? `Models: ${result.models.slice(0, 8).join(", ")}` : undefined,
@@ -897,6 +976,15 @@ function App() {
     const selected = orderSpeakers(selectCharactersForTask(task, characters, settings));
     const sessionId = shortId("session");
     const selectedCharacterIds = selected.map((character) => character.id);
+    const selectedProviders = selected.map(getCharacterProvider);
+    if (!settings.demoMode && selectedProviders.includes("ollama") && ollamaStatus.state !== "connected") {
+      addDiagnostic(
+        ollamaStatus.state === "failed" ? "error" : "warn",
+        "ollama",
+        "Task needs Ollama, but Ollama is not confirmed connected.",
+        ollamaStatus.message,
+      );
+    }
     setSelectedIds(selectedCharacterIds);
     setMeetingProgress({ current: 0, total: selected.length, label: "Gathering" });
     setAmbientNote(`Meeting started: ${selected.map((character) => character.name).join(", ")} are gathering.`);
@@ -949,6 +1037,13 @@ function App() {
         if (controller.signal.aborted) break;
 
         const liveCharacter = characters.find((item) => item.id === character.id) ?? character;
+        const provider = getCharacterProvider(liveCharacter);
+        if (!settings.demoMode && provider !== "ollama") {
+          throw new Error(
+            `${providerLabels[provider]} is assigned to ${liveCharacter.name}, but live remote provider calls are not connected yet. Enable demo mode or switch this character to Local Ollama.`,
+          );
+        }
+
         const text = settings.demoMode
           ? createDemoResponse({ character: liveCharacter, task, messages: transcript })
           : (
@@ -987,7 +1082,8 @@ function App() {
           error instanceof Error
             ? error.message
             : "The local model request failed. Check Ollama or enable demo mode.";
-        addDiagnostic("error", "ollama", `${character.name} turn failed.`, errorText);
+        const provider = getCharacterProvider(character);
+        addDiagnostic("error", providerDiagnosticSource(provider), `${character.name} turn failed.`, errorText);
         const message = addMessage({
           sessionId,
           speakerId: character.id,
@@ -1133,7 +1229,9 @@ function App() {
 
           <TeamPanel
             characters={characters}
-            onAdd={() => setEditingCharacter(createNewCharacter(settings))}
+            ollamaStatus={ollamaStatus}
+            onAdd={(provider) => setEditingCharacter(createNewCharacter(settings, provider, ollamaStatus.models))}
+            onDetectOllama={handleTestOllama}
             onEdit={setEditingCharacter}
             onDelete={handleDeleteCharacter}
             onToggle={handleToggleCharacter}
@@ -1161,6 +1259,10 @@ function App() {
         <CharacterEditor
           key={editingCharacter.id}
           character={editingCharacter}
+          isNew={!characters.some((character) => character.id === editingCharacter.id)}
+          ollamaModels={ollamaStatus.models}
+          ollamaStatus={ollamaStatus}
+          onDetectOllama={handleTestOllama}
           onClose={() => setEditingCharacter(null)}
           onSave={handleSaveCharacter}
         />
@@ -1235,20 +1337,52 @@ function TaskPanel({ taskText, setTaskText, status, onStart, onStop, selectedCha
 
 interface TeamPanelProps {
   characters: Character[];
-  onAdd: () => void;
+  ollamaStatus: OllamaStatus;
+  onAdd: (provider: AIProvider) => void;
+  onDetectOllama: () => void;
   onEdit: (character: Character) => void;
   onDelete: (id: string) => void;
   onToggle: (id: string) => void;
 }
 
-function TeamPanel({ characters, onAdd, onEdit, onDelete, onToggle }: TeamPanelProps) {
+function TeamPanel({ characters, ollamaStatus, onAdd, onDetectOllama, onEdit, onDelete, onToggle }: TeamPanelProps) {
+  const providerCounts = characters.reduce(
+    (counts, character) => {
+      counts[getCharacterProvider(character)] += 1;
+      return counts;
+    },
+    { ollama: 0, openai: 0, anthropic: 0, manual: 0 } as Record<AIProvider, number>,
+  );
+
   return (
     <section className="panel team-panel">
       <div className="panel-title">
         <h2>Team</h2>
-        <button className="icon-button" onClick={onAdd} aria-label="Add character" title="Add character">
-          <Plus size={17} />
+        <span>{characters.length} agents</span>
+      </div>
+      <div className="agent-toolbar" aria-label="Agent roster controls">
+        <button className="secondary-button" type="button" onClick={() => onAdd("ollama")}>
+          <Cpu size={16} />
+          Local
         </button>
+        <button className="ghost-button" type="button" onClick={() => onAdd("openai")}>
+          <Cloud size={16} />
+          ChatGPT
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onAdd("anthropic")}>
+          <Plus size={17} />
+          Claude
+        </button>
+        <button className="ghost-button" type="button" onClick={onDetectOllama} disabled={ollamaStatus.state === "testing"}>
+          <RefreshCw size={16} />
+          Detect Ollama
+        </button>
+      </div>
+      <div className="provider-strip" aria-label="Agent providers">
+        <span>{providerCounts.ollama} local</span>
+        <span>{providerCounts.openai} ChatGPT</span>
+        <span>{providerCounts.anthropic} Claude</span>
+        <span className={`provider-status provider-status--${ollamaStatus.state}`}>{ollamaStatus.message}</span>
       </div>
       <div className="team-list">
         {characters.map((character) => (
@@ -1263,7 +1397,7 @@ function TeamPanel({ characters, onAdd, onEdit, onDelete, onToggle }: TeamPanelP
             <div className="team-main">
               <strong>{character.name}</strong>
               <small>{character.role}</small>
-              <small>{character.model}</small>
+              <small>{providerLabels[getCharacterProvider(character)]} · {character.model}</small>
               <NeedStack needs={character.needs} />
             </div>
             <div className="team-state">
@@ -1570,26 +1704,48 @@ function SettingsPanel({ settings, setSettings, ollamaStatus, onTestOllama }: Se
 
 interface CharacterEditorProps {
   character: Character;
+  isNew: boolean;
+  ollamaModels: string[];
+  ollamaStatus: OllamaStatus;
+  onDetectOllama: () => void;
   onClose: () => void;
   onSave: (character: Character) => void;
 }
 
-function CharacterEditor({ character, onClose, onSave }: CharacterEditorProps) {
-  const [draft, setDraft] = useState<Character>(character);
+function CharacterEditor({ character, isNew, ollamaModels, ollamaStatus, onDetectOllama, onClose, onSave }: CharacterEditorProps) {
+  const [draft, setDraft] = useState<Character>(() => normalizeCharacter(character));
+  const draftProvider = getCharacterProvider(draft);
+  const modelOptions = draftProvider === "ollama" ? ollamaModels : providerModelOptions[draftProvider];
+  const modelListId = `${draft.id}-model-options`;
+
+  const getEditorDefaultModel = (provider: AIProvider) => {
+    if (provider === "ollama") return ollamaModels[0] ?? character.model ?? "llama3.2:3b";
+    return providerModelOptions[provider][0];
+  };
 
   const update = <K extends keyof Character>(key: K, value: Character[K]) => {
     setDraft((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const updateProvider = (provider: AIProvider) => {
+    setDraft((previous) => ({
+      ...previous,
+      provider,
+      model: getEditorDefaultModel(provider),
+    }));
   };
 
   const save = (event: FormEvent) => {
     event.preventDefault();
     const roomChanged = draft.preferredRoom !== character.preferredRoom;
     const target = roomChanged ? getRandomRoomSpot(draft.preferredRoom) : draft.targetPosition;
+    const provider = getCharacterProvider(draft);
     onSave({
       ...draft,
+      provider,
       name: draft.name.trim() || "Unnamed Agent",
       role: draft.role.trim() || "Generalist",
-      model: draft.model.trim(),
+      model: draft.model.trim() || getEditorDefaultModel(provider),
       skills: draft.skills.map((skill) => skill.trim()).filter(Boolean),
       state: draft.enabled ? draft.state === "disabled" ? "idle" : draft.state : "disabled",
       targetPosition: target,
@@ -1601,7 +1757,7 @@ function CharacterEditor({ character, onClose, onSave }: CharacterEditorProps) {
     <div className="modal-backdrop">
       <form className="character-editor" onSubmit={save}>
         <div className="panel-title">
-          <h2>{character.name === "New Agent" ? "Create Character" : `Edit ${character.name}`}</h2>
+          <h2>{isNew ? "Create Character" : `Edit ${character.name}`}</h2>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close editor" title="Close">
             <X size={18} />
           </button>
@@ -1616,8 +1772,22 @@ function CharacterEditor({ character, onClose, onSave }: CharacterEditorProps) {
             <input value={draft.role} onChange={(event) => update("role", event.target.value)} />
           </label>
           <label>
+            AI provider
+            <select value={draftProvider} onChange={(event) => updateProvider(event.target.value as AIProvider)}>
+              <option value="ollama">{providerLabels.ollama}</option>
+              <option value="openai">{providerLabels.openai}</option>
+              <option value="anthropic">{providerLabels.anthropic}</option>
+              <option value="manual">{providerLabels.manual}</option>
+            </select>
+          </label>
+          <label>
             Model
-            <input value={draft.model} onChange={(event) => update("model", event.target.value)} />
+            <input list={modelListId} value={draft.model} onChange={(event) => update("model", event.target.value)} />
+            <datalist id={modelListId}>
+              {modelOptions.map((model) => (
+                <option value={model} key={model} />
+              ))}
+            </datalist>
           </label>
           <label>
             Preferred room
@@ -1637,6 +1807,24 @@ function CharacterEditor({ character, onClose, onSave }: CharacterEditorProps) {
             <span>Enabled</span>
             <input type="checkbox" checked={draft.enabled} onChange={(event) => update("enabled", event.target.checked)} />
           </label>
+        </div>
+        <div className={`provider-note provider-note--${draftProvider}`}>
+          <span>{providerLabels[draftProvider]}</span>
+          {draftProvider === "ollama" ? (
+            <>
+              <p>
+                {ollamaModels.length
+                  ? `${ollamaModels.length} local model(s) detected.`
+                  : "No local Ollama models detected yet."}
+              </p>
+              <button className="ghost-button" type="button" onClick={onDetectOllama} disabled={ollamaStatus.state === "testing"}>
+                <RefreshCw size={15} />
+                Detect Ollama
+              </button>
+            </>
+          ) : (
+            <p>Saved as a provider profile for demo-mode collaboration; live remote API calls are not connected yet.</p>
+          )}
         </div>
         <label>
           Bio/personality

@@ -52,9 +52,18 @@ export async function testOllamaConnection(baseUrl: string, timeoutMs: number): 
       models,
     };
   } catch (error) {
+    const message =
+      error instanceof DOMException && error.name === "AbortError"
+        ? `Ollama did not answer at ${baseUrl} before the timeout. Start Ollama or enable demo mode.`
+        : error instanceof TypeError
+          ? `Could not reach Ollama at ${baseUrl}. Start Ollama, check the base URL, or enable demo mode.`
+          : error instanceof Error
+            ? `Could not reach Ollama at ${baseUrl}: ${error.message}`
+            : `Could not reach Ollama at ${baseUrl}.`;
+
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "Could not reach Ollama.",
+      message,
       models: [],
     };
   }

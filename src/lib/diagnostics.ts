@@ -1,4 +1,5 @@
 import {
+  AIProvider,
   AppSettings,
   Character,
   MemorySummary,
@@ -12,6 +13,12 @@ import {
 
 const NEED_KEYS = ["focus", "recreation", "social", "energy"] as const;
 const REQUIRED_STATION_CATEGORIES = ["work", "planning", "rest", "social", "management"] as const;
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  ollama: "Local Ollama",
+  openai: "ChatGPT / OpenAI",
+  anthropic: "Claude / Anthropic",
+  manual: "Demo/manual",
+};
 
 interface SmokeTestInput {
   characters: Character[];
@@ -53,6 +60,15 @@ function canUseLocalStorage(): boolean {
   }
 }
 
+function getProvider(character: Character): AIProvider {
+  if (character.provider) return character.provider;
+  const model = character.model.toLowerCase();
+  if (model.includes("claude") || model.includes("anthropic")) return "anthropic";
+  if (model.includes("gpt") || model.includes("chatgpt") || model.includes("openai")) return "openai";
+  if (model.includes("demo") || model.includes("manual")) return "manual";
+  return "ollama";
+}
+
 export function runSmokeTests(input: SmokeTestInput): SmokeTestResult[] {
   const enabledCharacters = input.characters.filter((character) => character.enabled);
   const missingNeeds = enabledCharacters.filter((character) =>
@@ -66,6 +82,15 @@ export function runSmokeTests(input: SmokeTestInput): SmokeTestResult[] {
   const latestSession = input.sessions[0];
   const hasFinalAnswer = Boolean(input.finalAnswer.trim() || latestSession?.finalAnswer?.trim());
   const persistenceAvailable = canUseLocalStorage();
+  const providerCounts = enabledCharacters.reduce(
+    (counts, character) => {
+      const provider = getProvider(character);
+      counts[provider] += 1;
+      return counts;
+    },
+    { ollama: 0, openai: 0, anthropic: 0, manual: 0 } as Record<AIProvider, number>,
+  );
+  const remoteProviderCount = providerCounts.openai + providerCounts.anthropic;
 
   return [
     result(
@@ -88,6 +113,28 @@ export function runSmokeTests(input: SmokeTestInput): SmokeTestResult[] {
       missingCategories.length === 0
         ? `${input.stations.length} stations cover work, planning, rest, social, and management.`
         : `Missing station categories: ${missingCategories.join(", ")}.`,
+    ),
+    result(
+      "Provider roster",
+      remoteProviderCount > 0 ? "warn" : "pass",
+      remoteProviderCount > 0
+        ? `${remoteProviderCount} remote provider character(s) are configured for demo/planning until API connectors are added.`
+        : `${PROVIDER_LABELS.ollama} covers the enabled roster.`,
+    ),
+    result(
+      "Ollama discovery",
+      input.ollamaStatus.state === "connected"
+        ? input.ollamaStatus.models.length > 0
+          ? "pass"
+          : "warn"
+        : input.ollamaStatus.state === "failed"
+          ? "fail"
+          : "warn",
+      input.ollamaStatus.state === "connected"
+        ? input.ollamaStatus.models.length > 0
+          ? `${input.ollamaStatus.models.length} local Ollama model(s) detected.`
+          : "Ollama responded, but did not list any local models."
+        : input.ollamaStatus.message || "Ollama has not been checked yet.",
     ),
     result(
       "Autonomous placement",

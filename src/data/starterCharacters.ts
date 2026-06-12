@@ -20,6 +20,7 @@ const makeCharacter = (
     name,
     role,
     model,
+    provider: "ollama",
     bio,
     skills,
     speakingStyle,

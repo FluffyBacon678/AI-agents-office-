@@ -29,7 +29,15 @@ export type SessionStatus =
   | "error";
 
 export type DiagnosticLevel = "info" | "warn" | "error" | "success";
-export type DiagnosticSource = "system" | "ollama" | "workflow" | "simulation" | "smoke" | "runtime";
+export type DiagnosticSource =
+  | "system"
+  | "ollama"
+  | "openai"
+  | "anthropic"
+  | "workflow"
+  | "simulation"
+  | "smoke"
+  | "runtime";
 export type SmokeTestStatus = "pass" | "warn" | "fail";
 
 export interface Vector {
@@ -60,6 +68,8 @@ export type CharacterNeeds = Record<NeedKey, number>;
 export type ScheduleMode = "auto" | "work" | "rest" | "social" | "meeting";
 
 export type ManagerRole = "teamLead" | "hr" | "reviewer";
+
+export type AIProvider = "ollama" | "openai" | "anthropic" | "manual";
 
 export type StationKind =
   | "computer"
@@ -97,6 +107,7 @@ export interface Character {
   name: string;
   role: string;
   model: string;
+  provider?: AIProvider;
   bio: string;
   skills: string[];
   speakingStyle: string;

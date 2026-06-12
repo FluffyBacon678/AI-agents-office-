@@ -561,6 +561,63 @@ select:focus {
   gap: 8px;
 }
 
+.agent-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.agent-toolbar .secondary-button,
+.agent-toolbar .ghost-button {
+  min-height: 34px;
+  padding: 7px 9px;
+}
+
+.provider-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.provider-strip span {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(244, 234, 216, 0.1);
+  border-radius: 7px;
+  background: rgba(244, 234, 216, 0.045);
+  color: #cfc6b8;
+  padding: 5px 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.provider-strip .provider-status {
+  grid-column: 1 / -1;
+  color: #aeb8ad;
+  text-transform: none;
+}
+
+.provider-status--connected {
+  border-color: rgba(136, 200, 150, 0.35);
+  color: #bce7ac;
+}
+
+.provider-status--failed {
+  border-color: rgba(238, 128, 110, 0.38);
+  color: #ffb5a8;
+}
+
+.provider-status--testing {
+  border-color: rgba(240, 196, 119, 0.35);
+  color: #ffe0a1;
+}
+
 .team-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto 32px 32px;
@@ -1200,6 +1257,48 @@ select:focus {
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
 }
 
+.provider-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(244, 234, 216, 0.11);
+  border-radius: 7px;
+  background: rgba(244, 234, 216, 0.045);
+  padding: 8px 10px;
+}
+
+.provider-note span {
+  color: #f0c477;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.provider-note p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #cfc6b8;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-note .ghost-button {
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.provider-note--openai {
+  border-color: rgba(128, 173, 220, 0.25);
+}
+
+.provider-note--anthropic {
+  border-color: rgba(209, 138, 188, 0.25);
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -1249,5 +1348,17 @@ select:focus {
   .settings-grid,
   .editor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .agent-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-note {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-note p {
+    white-space: normal;
   }
 }
