@@ -900,6 +900,206 @@ select:focus {
   font-size: 0.7rem;
 }
 
+.diagnostics-panel {
+  gap: 10px;
+}
+
+.diagnostics-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diagnostics-toolbar .primary-button,
+.diagnostics-toolbar .ghost-button {
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.smoke-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.smoke-summary span {
+  min-width: 0;
+  border: 1px solid rgba(244, 234, 216, 0.11);
+  border-radius: 7px;
+  background: rgba(244, 234, 216, 0.045);
+  padding: 5px 7px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.smoke-summary--pass {
+  color: #bce7ac;
+}
+
+.smoke-summary--warn {
+  color: #ffe0a1;
+}
+
+.smoke-summary--fail {
+  color: #ffb5a8;
+}
+
+.smoke-list {
+  display: grid;
+  gap: 7px;
+  max-height: 230px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.smoke-result {
+  min-width: 0;
+  border-left: 3px solid rgba(244, 234, 216, 0.18);
+  border-radius: 0 7px 7px 0;
+  background: rgba(244, 234, 216, 0.045);
+  padding: 8px 9px;
+}
+
+.smoke-result--pass {
+  border-left-color: #88c896;
+}
+
+.smoke-result--warn {
+  border-left-color: #f0c477;
+}
+
+.smoke-result--fail {
+  border-left-color: #ee806e;
+}
+
+.smoke-result div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.smoke-result strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff0dc;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smoke-result span {
+  flex: 0 0 auto;
+  border: 1px solid rgba(244, 234, 216, 0.12);
+  border-radius: 999px;
+  background: rgba(244, 234, 216, 0.06);
+  color: #f0c477;
+  padding: 2px 7px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.smoke-result--pass span {
+  color: #bce7ac;
+}
+
+.smoke-result--fail span {
+  color: #ffb5a8;
+}
+
+.smoke-result p {
+  margin: 5px 0 0;
+  color: #cfc6b8;
+  font-size: 0.78rem;
+}
+
+.terminal-window {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid rgba(136, 200, 150, 0.18);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(136, 200, 150, 0.06), rgba(128, 173, 220, 0.025)),
+    rgba(6, 9, 10, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 9px;
+}
+
+.terminal-line {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  color: #cfe6d0;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.terminal-line span {
+  color: #7eb08a;
+}
+
+.terminal-line strong {
+  color: #bce7ac;
+  text-transform: uppercase;
+}
+
+.terminal-line em {
+  color: #80addc;
+  font-style: normal;
+}
+
+.terminal-line p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #dce8d8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-line small {
+  grid-column: 4;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #9eb8a4;
+  font-size: 0.68rem;
+  white-space: pre-wrap;
+}
+
+.terminal-line--warn strong {
+  color: #ffe0a1;
+}
+
+.terminal-line--error strong {
+  color: #ffb5a8;
+}
+
+.terminal-line--success strong {
+  color: #bce7ac;
+}
+
+.terminal-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #8ea395;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.78rem;
+}
+
 .memory-list article {
   border-left: 3px solid #78b891;
   border-radius: 0 7px 7px 0;
@@ -923,13 +1123,19 @@ select:focus {
 
 .control-column::-webkit-scrollbar,
 .conversation-log::-webkit-scrollbar,
-.final-panel pre::-webkit-scrollbar {
+.final-panel pre::-webkit-scrollbar,
+.work-list::-webkit-scrollbar,
+.smoke-list::-webkit-scrollbar,
+.terminal-window::-webkit-scrollbar {
   width: 10px;
 }
 
 .control-column::-webkit-scrollbar-thumb,
 .conversation-log::-webkit-scrollbar-thumb,
-.final-panel pre::-webkit-scrollbar-thumb {
+.final-panel pre::-webkit-scrollbar-thumb,
+.work-list::-webkit-scrollbar-thumb,
+.smoke-list::-webkit-scrollbar-thumb,
+.terminal-window::-webkit-scrollbar-thumb {
   border: 3px solid rgba(12, 14, 18, 0.92);
   border-radius: 999px;
   background: rgba(244, 234, 216, 0.24);
@@ -937,7 +1143,10 @@ select:focus {
 
 .control-column::-webkit-scrollbar-track,
 .conversation-log::-webkit-scrollbar-track,
-.final-panel pre::-webkit-scrollbar-track {
+.final-panel pre::-webkit-scrollbar-track,
+.work-list::-webkit-scrollbar-track,
+.smoke-list::-webkit-scrollbar-track,
+.terminal-window::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.18);
 }
 

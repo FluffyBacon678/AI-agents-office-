@@ -1,14 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  Bug,
   CheckCircle2,
   Edit3,
   GitPullRequest,
+  ListChecks,
   PauseCircle,
   Play,
   Plus,
   Save,
   Settings2,
+  Terminal,
   Trash2,
   Wifi,
   WifiOff,
@@ -24,6 +27,9 @@ import {
   CharacterNeeds,
   CharacterState,
   ConversationMessage,
+  DiagnosticLevel,
+  DiagnosticLogEntry,
+  DiagnosticSource,
   ManagerRole,
   MemorySummary,
   NeedKey,
@@ -33,6 +39,7 @@ import {
   RoomId,
   ScheduleMode,
   SpeechBubble,
+  SmokeTestResult,
   Station,
   StationCategory,
   TaskSession,
@@ -57,6 +64,7 @@ import {
   pickManager,
   statusLabel,
 } from "./lib/workflow";
+import { runSmokeTests } from "./lib/diagnostics";
 
 const meetingOrder: RoomId[] = ["meeting", "meeting", "whiteboard", "art", "library", "desks"];
 const needKeys: NeedKey[] = ["focus", "recreation", "social", "energy"];
@@ -348,6 +356,8 @@ function App() {
   const [memories, setMemories] = useState<MemorySummary[]>(() => stored?.memories ?? []);
   const [sessions, setSessions] = useState<TaskSession[]>(() => stored?.sessions ?? []);
   const [workflows, setWorkflows] = useState<ProjectWorkflow[]>(() => stored?.workflows ?? []);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<DiagnosticLogEntry[]>(() => stored?.diagnosticLogs ?? []);
+  const [smokeTests, setSmokeTests] = useState<SmokeTestResult[]>(() => stored?.smokeTests ?? []);
   const [taskText, setTaskText] = useState("Help me design a Wallpaper Engine AI office app.");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [finalAnswer, setFinalAnswer] = useState("");
@@ -375,6 +385,46 @@ function App() {
   const ambientTickRef = useRef(0);
   const simTickRef = useRef(0);
 
+  const addDiagnostic = (
+    level: DiagnosticLevel,
+    source: DiagnosticSource,
+    message: string,
+    details?: string,
+  ): DiagnosticLogEntry => {
+    const entry: DiagnosticLogEntry = {
+      id: shortId("log"),
+      createdAt: nowIso(),
+      level,
+      source,
+      message,
+      details,
+    };
+    setDiagnosticLogs((previous) => [entry, ...previous].slice(0, 200));
+    return entry;
+  };
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      addDiagnostic(
+        "error",
+        "runtime",
+        event.message || "Runtime error",
+        event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : undefined,
+      );
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason instanceof Error ? event.reason.message : String(event.reason ?? "Unhandled promise rejection");
+      addDiagnostic("error", "runtime", "Unhandled promise rejection", reason);
+    };
+
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+
   useEffect(() => {
     charactersRef.current = characters;
   }, [characters]);
@@ -394,9 +444,11 @@ function App() {
       memories,
       sessions: sessions.slice(-12),
       workflows: workflows.slice(0, 8),
+      diagnosticLogs: diagnosticLogs.slice(0, 200),
+      smokeTests: smokeTests.slice(0, 24),
     };
     savePersistedState(state);
-  }, [characters, settings, memories, sessions, workflows]);
+  }, [characters, settings, memories, sessions, workflows, diagnosticLogs, smokeTests]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -478,6 +530,12 @@ function App() {
         const participantIds = participants.map((character) => character.id);
         addBubble(lead.id, "Quick sync at the meeting table.", "system");
         setAmbientNote(`${lead.name} called a quick team sync.`);
+        addDiagnostic(
+          "info",
+          "simulation",
+          `${lead.name} called a quick team sync.`,
+          participants.map((character) => character.name).join(", "),
+        );
         setCharacters((previous) =>
           previous.map((character) => {
             const index = participantIds.indexOf(character.id);
@@ -615,6 +673,12 @@ function App() {
       }
 
       setAmbientNote(`Pipeline: ${advanced.summary}`);
+      addDiagnostic(
+        advanced.status === "accepted" ? "success" : "info",
+        "workflow",
+        advanced.summary,
+        `${advanced.title} moved to ${statusLabel(advanced.status)} at ${advanced.progress}%.`,
+      );
     }, 5200);
 
     return () => window.clearInterval(interval);
@@ -743,12 +807,46 @@ function App() {
 
   const handleTestOllama = async () => {
     setOllamaStatus({ state: "testing", message: "Testing Ollama connection...", models: [] });
+    addDiagnostic("info", "ollama", "Testing Ollama connection.", settings.ollamaBaseUrl);
     const result = await testOllamaConnection(settings.ollamaBaseUrl, 6000);
     setOllamaStatus({
       state: result.ok ? "connected" : "failed",
       message: result.message,
       models: result.models,
     });
+    addDiagnostic(
+      result.ok ? "success" : "error",
+      "ollama",
+      result.message,
+      result.models.length ? `Models: ${result.models.slice(0, 8).join(", ")}` : undefined,
+    );
+  };
+
+  const handleRunSmokeTests = () => {
+    const results = runSmokeTests({
+      characters,
+      settings,
+      memories,
+      sessions,
+      workflows,
+      stations,
+      finalAnswer,
+      ollamaStatus,
+    });
+    setSmokeTests(results);
+    const failures = results.filter((item) => item.status === "fail").length;
+    const warnings = results.filter((item) => item.status === "warn").length;
+    addDiagnostic(
+      failures ? "error" : warnings ? "warn" : "success",
+      "smoke",
+      `Smoke test complete: ${results.length - failures - warnings} passed, ${warnings} warning(s), ${failures} failure(s).`,
+      results.map((item) => `${item.status.toUpperCase()}: ${item.name} - ${item.message}`).join("\n"),
+    );
+  };
+
+  const handleClearDiagnostics = () => {
+    setDiagnosticLogs([]);
+    setSmokeTests([]);
   };
 
   const handleStopTask = () => {
@@ -758,6 +856,7 @@ function App() {
     setSessionStatus("cancelled");
     setMeetingProgress({ current: 0, total: 0, label: "Cancelled" });
     setAmbientNote("Task cancelled. Agents are returning to the office loop.");
+    addDiagnostic("warn", "system", "Task cancelled by operator.", currentTask || undefined);
     setCurrentSpeakerId(undefined);
     setActiveCharacterId(undefined);
     addMessage({
@@ -776,6 +875,7 @@ function App() {
 
     const enabled = characters.filter((character) => character.enabled);
     if (!enabled.length) {
+      addDiagnostic("error", "system", "Task could not start because no agents are enabled.");
       addMessage({
         sessionId: "current",
         speakerName: "System",
@@ -800,6 +900,12 @@ function App() {
     setSelectedIds(selectedCharacterIds);
     setMeetingProgress({ current: 0, total: selected.length, label: "Gathering" });
     setAmbientNote(`Meeting started: ${selected.map((character) => character.name).join(", ")} are gathering.`);
+    addDiagnostic(
+      "info",
+      "system",
+      `Task started with ${selected.length} agent(s).`,
+      `${task} | ${selected.map((character) => character.name).join(", ")}`,
+    );
 
     setCharacters((previous) =>
       previous.map((character) => {
@@ -881,6 +987,7 @@ function App() {
           error instanceof Error
             ? error.message
             : "The local model request failed. Check Ollama or enable demo mode.";
+        addDiagnostic("error", "ollama", `${character.name} turn failed.`, errorText);
         const message = addMessage({
           sessionId,
           speakerId: character.id,
@@ -932,11 +1039,18 @@ function App() {
       setSessions((previous) => [session, ...previous].slice(0, 12));
       const workflow = createWorkflowFromTask(task, characters);
       setWorkflows((previous) => [workflow, ...previous].slice(0, 8));
+      addDiagnostic(
+        "success",
+        "workflow",
+        "Production pipeline opened.",
+        `${workflow.workItems.length} work item(s) created for manager review and QA.`,
+      );
       const manager = pickManager(characters);
       if (manager) {
         addBubble(manager.id, "I opened a production pipeline for this task.", "system");
       }
       setSessionStatus("complete");
+      addDiagnostic("success", "system", "Task completed and memory saved.", memoryText);
     }
 
     runningRef.current = false;
@@ -1027,6 +1141,12 @@ function App() {
 
           <FinalAnswerPanel finalAnswer={finalAnswer} />
           <WorkflowPanel workflows={workflows} characters={characters} />
+          <DiagnosticsPanel
+            logs={diagnosticLogs}
+            smokeTests={smokeTests}
+            onRunSmokeTests={handleRunSmokeTests}
+            onClear={handleClearDiagnostics}
+          />
           <MemoryPanel memories={memories} />
           <SettingsPanel
             settings={settings}
@@ -1268,6 +1388,76 @@ function WorkflowPanel({ workflows, characters }: { workflows: ProjectWorkflow[]
       ) : (
         <p className="empty-state">After a team meeting, managers will open draft work items here for workers, leads, and QA.</p>
       )}
+    </section>
+  );
+}
+
+interface DiagnosticsPanelProps {
+  logs: DiagnosticLogEntry[];
+  smokeTests: SmokeTestResult[];
+  onRunSmokeTests: () => void;
+  onClear: () => void;
+}
+
+function DiagnosticsPanel({ logs, smokeTests, onRunSmokeTests, onClear }: DiagnosticsPanelProps) {
+  const passCount = smokeTests.filter((item) => item.status === "pass").length;
+  const warnCount = smokeTests.filter((item) => item.status === "warn").length;
+  const failCount = smokeTests.filter((item) => item.status === "fail").length;
+
+  return (
+    <section className="panel diagnostics-panel">
+      <div className="panel-title">
+        <h2>Diagnostics Terminal</h2>
+        <Terminal size={17} />
+      </div>
+      <div className="diagnostics-toolbar">
+        <button className="primary-button" type="button" onClick={onRunSmokeTests}>
+          <ListChecks size={16} />
+          Run Smoke Test
+        </button>
+        <button className="ghost-button" type="button" onClick={onClear} disabled={!logs.length && !smokeTests.length}>
+          <Trash2 size={16} />
+          Clear
+        </button>
+      </div>
+      <div className="smoke-summary" aria-label="Smoke test summary">
+        <span className="smoke-summary--pass">{passCount} pass</span>
+        <span className="smoke-summary--warn">{warnCount} warn</span>
+        <span className="smoke-summary--fail">{failCount} fail</span>
+      </div>
+      {smokeTests.length ? (
+        <div className="smoke-list">
+          {smokeTests.map((item) => (
+            <article className={`smoke-result smoke-result--${item.status}`} key={item.id}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>{item.status}</span>
+              </div>
+              <p>{item.message}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-state">Run a smoke test to check the office loop, workflow, model mode, memory, and persistence.</p>
+      )}
+      <div className="terminal-window" aria-label="Diagnostic event log">
+        {logs.length ? (
+          logs.slice(0, 14).map((entry) => (
+            <article className={`terminal-line terminal-line--${entry.level}`} key={entry.id}>
+              <span>[{formatTime(entry.createdAt)}]</span>
+              <strong>{entry.level}</strong>
+              <em>{entry.source}</em>
+              <p>{entry.message}</p>
+              {entry.details && <small>{entry.details}</small>}
+            </article>
+          ))
+        ) : (
+          <div className="terminal-empty">
+            <Bug size={16} />
+            <span>No diagnostic events yet.</span>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

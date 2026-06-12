@@ -28,6 +28,10 @@ export type SessionStatus =
   | "cancelled"
   | "error";
 
+export type DiagnosticLevel = "info" | "warn" | "error" | "success";
+export type DiagnosticSource = "system" | "ollama" | "workflow" | "simulation" | "smoke" | "runtime";
+export type SmokeTestStatus = "pass" | "warn" | "fail";
+
 export interface Vector {
   x: number;
   y: number;
@@ -191,6 +195,23 @@ export interface ProjectWorkflow {
   updatedAt: string;
 }
 
+export interface DiagnosticLogEntry {
+  id: string;
+  createdAt: string;
+  level: DiagnosticLevel;
+  source: DiagnosticSource;
+  message: string;
+  details?: string;
+}
+
+export interface SmokeTestResult {
+  id: string;
+  name: string;
+  status: SmokeTestStatus;
+  message: string;
+  createdAt: string;
+}
+
 export interface SpeechBubble {
   id: string;
   characterId: string;
@@ -205,6 +226,8 @@ export interface PersistedState {
   memories: MemorySummary[];
   sessions: TaskSession[];
   workflows?: ProjectWorkflow[];
+  diagnosticLogs?: DiagnosticLogEntry[];
+  smokeTests?: SmokeTestResult[];
 }
 
 export interface OllamaStatus {
